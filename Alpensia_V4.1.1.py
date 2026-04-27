@@ -43,8 +43,9 @@ APP_VERSION = "4.1.2"
 MAX_SAVED_ACCOUNTS = 20
 DPAPI_ENTROPY = b"Alpensia_V4.1.1_Credentials"
 DEBUG_CAPTURE_ENABLED = False
+TIME_PICK_DEBUG_ENABLED = False
 TIME_ROW_DEBUG_ENABLED = False
-PERF_LOG_ENABLED = True
+PERF_LOG_ENABLED = False
 
 
 def _set_windows_app_id():
@@ -344,7 +345,8 @@ class AlpensiaBot:
     # 공통 유틸
     # --------------------------
     def _dbg(self, msg: str):
-        self.logger.log(msg)
+        if TIME_PICK_DEBUG_ENABLED:
+            self.logger.log(msg)
 
     def _dbg_time_row(self, msg: str):
         if TIME_ROW_DEBUG_ENABLED:
@@ -1063,7 +1065,7 @@ class AlpensiaBot:
         # ✅ (삭제됨) _wait_for_time_table() 사용 안함
         # 시간표는 '라디오 등장'을 기준으로 새 모듈에서 자체 대기함
 
-        self.logger.log(f"[TRY] 목표 시간 기준 최근접 자동 선택: {target_time}")
+        self.logger.log(f"[INFO] 목표 시간 선택: {target_time}")
 
         select_started = time.perf_counter()
         ok = self.select_time_by_target(target_hhmm=target_time, max_candidates=12)
@@ -1082,7 +1084,7 @@ class AlpensiaBot:
         self._perf(f"[PERF] until agree checked: {time.perf_counter() - started:.3f}s")
 
         if stop_before_submit:
-            self.logger.log("[DRYRUN] 예약 버튼 클릭 직전에서 중단(실제 클릭 차단)")
+            self.logger.log("[OK] 예약 버튼 클릭 직전까지 진행 완료")
             self._save_debug("before_submit")
             self._perf(f"[PERF] try_book total(dryrun): {time.perf_counter() - started:.3f}s")
             return True
