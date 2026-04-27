@@ -1,0 +1,8 @@
+{
+  "github_owner": "claire8201-web",
+  "github_repo": "Alpensia",
+  "app_asset_name": "Alpensia.exe",
+  "version_asset_name": "version.json",
+  "launch_args": [],
+  "allow_prerelease": false
+}

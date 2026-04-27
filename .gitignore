@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+build/
+dist/
+debug_captures/
+alpensia _ capture img/
+
+credentials.enc.json
+config.json
+
+*.bak
+_update_tmp/
+alpensia
