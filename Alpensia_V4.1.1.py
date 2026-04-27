@@ -39,7 +39,7 @@ WHITE = "#ffffff"
 LOGO_FILENAME = "alpensia_logo.png"
 ICON_FILENAME = "alpensia_logo.ico"
 APP_ID = "armatech.alpensia.v411"
-APP_VERSION = "4.1.1"
+APP_VERSION = "4.1.2"
 MAX_SAVED_ACCOUNTS = 20
 DPAPI_ENTROPY = b"Alpensia_V4.1.1_Credentials"
 DEBUG_CAPTURE_ENABLED = False
@@ -1476,7 +1476,12 @@ class App(tk.Tk):
             date_var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
             time_var = tk.StringVar(value="09:00")
 
-            chk = ttk.Checkbutton(lf_pri, text=f"{row_idx + 1}순위 사용", variable=use_var)
+            chk = ttk.Checkbutton(
+                lf_pri,
+                text=f"{row_idx + 1}순위 사용",
+                variable=use_var,
+                command=lambda idx=row_idx: self._on_priority_toggle(idx),
+            )
             chk.grid(row=row_idx, column=0, sticky="w", pady=(2, 2))
 
             ent_date = tk.Entry(lf_pri, width=12, bg=WHITE, textvariable=date_var, state="readonly", readonlybackground=WHITE)
@@ -1499,6 +1504,11 @@ class App(tk.Tk):
 
             self.pri_vars.append((use_var, date_var, time_var))
             self.pri_widgets.append((chk, ent_date, btn_cal, cb))
+
+            if not use_var.get():
+                date_var.set("")
+                time_var.set("")
+            self._apply_priority_enabled_state(row_idx)
 
         for i in range(3):
             add_row(i)
@@ -1579,6 +1589,32 @@ class App(tk.Tk):
             return
         if self.var_live_safe.get():
             self.var_wait_open.set(False)
+
+    def _apply_priority_enabled_state(self, index: int):
+        enabled = bool(self.pri_vars[index][0].get())
+        _chk, ent_date, btn_cal, cb = self.pri_widgets[index]
+        entry_state = "readonly" if enabled else "disabled"
+        button_state = "normal" if enabled else "disabled"
+        combo_state = "readonly" if enabled else "disabled"
+        try:
+            ent_date.configure(state=entry_state)
+        except Exception:
+            pass
+        try:
+            btn_cal.configure(state=button_state)
+        except Exception:
+            pass
+        try:
+            cb.configure(state=combo_state)
+        except Exception:
+            pass
+
+    def _on_priority_toggle(self, index: int):
+        use_var, date_var, time_var = self.pri_vars[index]
+        if not use_var.get():
+            date_var.set("")
+            time_var.set("")
+        self._apply_priority_enabled_state(index)
 
     def _load_logo(self):
         try:
@@ -1767,9 +1803,11 @@ class App(tk.Tk):
 
             pri = cfg.get("priorities", [])
             for i in range(min(3, len(pri))):
-                self.pri_vars[i][0].set(bool(pri[i].get("enabled", True if i == 0 else False)))
-                self.pri_vars[i][1].set(pri[i].get("ymd", datetime.now().strftime("%Y-%m-%d")))
-                self.pri_vars[i][2].set(pri[i].get("hhmm", "09:00"))
+                enabled = bool(pri[i].get("enabled", True if i == 0 else False))
+                self.pri_vars[i][0].set(enabled)
+                self.pri_vars[i][1].set(pri[i].get("ymd", datetime.now().strftime("%Y-%m-%d")) if enabled else "")
+                self.pri_vars[i][2].set(pri[i].get("hhmm", "09:00") if enabled else "")
+                self._apply_priority_enabled_state(i)
         except Exception:
             pass
 

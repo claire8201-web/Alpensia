@@ -1,6 +1,6 @@
 {
-  "version": "4.1.1",
+  "version": "4.1.2",
   "asset_name": "Alpensia.exe",
-  "notes": "GitHub Releases 자동 업데이트 지원 추가",
-  "sha256": "075bdb2381707610f475785040b9bde77963800664f6c2a78729c2393b629131"
+  "notes": "예약 우선순위 체크 해제 시 날짜와 시간을 빈칸으로 초기화",
+  "sha256": "ae5c1c840d69cda6fb7d9465984a2c1bf909dd0bb40e2d39142254a672249658"
 }
