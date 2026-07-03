@@ -14,7 +14,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-LAUNCHER_VERSION = "1.1.0"
+LAUNCHER_VERSION = "1.1.1"
 APP_EXE_NAME = "Alpensia.exe"
 CANCEL_EXE_NAME = "Alpensia_CancelWatcher.exe"
 LOCAL_VERSION_FILE = "app_version.json"
@@ -24,7 +24,7 @@ DEFAULT_CONFIG = {
     "github_repo": "Alpensia",
     "app_asset_name": APP_EXE_NAME,
     "version_asset_name": "version.json",
-    "cancel_watcher_asset_name": "Alpensia_CancelWatcher_v1.0.0.zip",
+    "cancel_watcher_asset_name": "Alpensia_CancelWatcher_v1.0.1.zip",
     "cancel_watcher_exe_name": CANCEL_EXE_NAME,
     "launch_args": [],
     "allow_prerelease": False,
@@ -108,6 +108,22 @@ def latest_release(cfg: dict) -> dict:
 
 def release_assets(release: dict) -> dict:
     return {asset.get("name", ""): asset for asset in release.get("assets", [])}
+
+
+def find_cancel_watcher_asset(assets: dict, preferred_name: str) -> dict:
+    preferred = assets.get(preferred_name)
+    if preferred:
+        return preferred
+
+    candidates = []
+    for name, asset in assets.items():
+        lower_name = name.lower()
+        if lower_name.startswith("alpensia_cancelwatcher") and lower_name.endswith(".zip"):
+            candidates.append((name, asset))
+    if not candidates:
+        raise RuntimeError(f"GitHub Release 자산에서 {preferred_name} 파일을 찾지 못했습니다.")
+    candidates.sort(key=lambda item: parse_version_parts(item[0]), reverse=True)
+    return candidates[0][1]
 
 
 def parse_version_parts(version: str) -> tuple:
@@ -265,10 +281,8 @@ def install_or_update(cfg: dict, remote: dict, local_version: str, prompt: bool 
 def install_cancel_watcher(cfg: dict, prompt: bool = True) -> str:
     release = latest_release(cfg)
     assets = release_assets(release)
-    asset_name = str(cfg.get("cancel_watcher_asset_name") or "Alpensia_CancelWatcher_v1.0.0.zip")
-    asset = assets.get(asset_name)
-    if not asset:
-        raise RuntimeError(f"GitHub Release 자산에서 {asset_name} 파일을 찾지 못했습니다.")
+    asset_name = str(cfg.get("cancel_watcher_asset_name") or "Alpensia_CancelWatcher_v1.0.1.zip")
+    asset = find_cancel_watcher_asset(assets, asset_name)
 
     target = local_cancel_path(cfg)
     if prompt and os.path.exists(target):

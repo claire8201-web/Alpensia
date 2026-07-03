@@ -32,14 +32,30 @@ else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
     RESOURCE_DIR = APP_DIR
 
-CONFIG_PATH = os.path.join(APP_DIR, "config.json")
-CREDENTIALS_PATH = os.path.join(APP_DIR, "credentials.enc.json")
+APP_DATA_DIR = os.path.join(os.environ.get("APPDATA", APP_DIR), "Armatech", "Alpensia")
+os.makedirs(APP_DATA_DIR, exist_ok=True)
+
+
+def _state_path(filename: str) -> str:
+    target = os.path.join(APP_DATA_DIR, filename)
+    legacy = os.path.join(APP_DIR, filename)
+    if not os.path.exists(target) and os.path.exists(legacy):
+        try:
+            import shutil
+            shutil.copy2(legacy, target)
+        except Exception:
+            return legacy
+    return target
+
+
+CONFIG_PATH = _state_path("config.json")
+CREDENTIALS_PATH = _state_path("credentials.enc.json")
 APP_BG = "#f0f0f0"
 WHITE = "#ffffff"
 LOGO_FILENAME = "alpensia_logo.png"
 ICON_FILENAME = "alpensia_logo.ico"
 APP_ID = "armatech.alpensia.v411"
-APP_VERSION = "4.1.4"
+APP_VERSION = "4.1.5"
 MAX_SAVED_ACCOUNTS = 20
 PRIORITY_COUNT = 4
 TIME_CANDIDATE_MAX_DIFF_MINUTES = 120

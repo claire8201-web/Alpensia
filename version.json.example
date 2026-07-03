@@ -1,6 +1,6 @@
-{
-  "version": "4.1.4",
-  "asset_name": "Alpensia.exe",
-  "notes": "4순위 예약 흐름과 목표월 이동 안정화 업데이트",
-  "sha256": "2686cb7e43f4e1eaa40e4bfd7feba0947c71a8aea36523d361f8465d117980bc"
+﻿{
+    "version":  "4.1.5",
+    "asset_name":  "Alpensia.exe",
+    "notes":  "로그인 정보와 설정을 사용자 AppData에 저장하여 업데이트 후에도 유지",
+    "sha256":  "12b5809cfd9fa9a511f76720b1addd4dbd84250b0c50d38419d5c6b7e2edc344"
 }

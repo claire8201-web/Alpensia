@@ -30,14 +30,30 @@ else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
     RESOURCE_DIR = APP_DIR
 
-CONFIG_PATH = os.path.join(APP_DIR, "cancel_watcher_config.json")
-CREDENTIALS_PATH = os.path.join(APP_DIR, "credentials.enc.json")
+APP_DATA_DIR = os.path.join(os.environ.get("APPDATA", APP_DIR), "Armatech", "Alpensia")
+os.makedirs(APP_DATA_DIR, exist_ok=True)
+
+
+def _state_path(filename: str) -> str:
+    target = os.path.join(APP_DATA_DIR, filename)
+    legacy = os.path.join(APP_DIR, filename)
+    if not os.path.exists(target) and os.path.exists(legacy):
+        try:
+            import shutil
+            shutil.copy2(legacy, target)
+        except Exception:
+            return legacy
+    return target
+
+
+CONFIG_PATH = _state_path("cancel_watcher_config.json")
+CREDENTIALS_PATH = _state_path("credentials.enc.json")
 LOGO_FILENAME = "alpensia_logo.png"
 ICON_FILENAME = "alpensia_logo.ico"
 APP_BG = "#f0f0f0"
 WHITE = "#ffffff"
 APP_TITLE = "알펜시아 취소티 감시"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 MAX_SAVED_ACCOUNTS = 20
 WATCH_COUNT = 3
 DPAPI_ENTROPY = b"Alpensia_V4.1.1_Credentials"
