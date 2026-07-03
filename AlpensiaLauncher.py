@@ -14,11 +14,13 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-LAUNCHER_VERSION = "1.1.1"
+LAUNCHER_VERSION = "1.2.0"
 APP_EXE_NAME = "Alpensia.exe"
 CANCEL_EXE_NAME = "Alpensia_CancelWatcher.exe"
 LOCAL_VERSION_FILE = "app_version.json"
+LOCAL_CANCEL_VERSION_FILE = "cancel_watcher_version.json"
 CONFIG_FILE = "launcher_config.json"
+
 DEFAULT_CONFIG = {
     "github_owner": "claire8201-web",
     "github_repo": "Alpensia",
@@ -27,7 +29,6 @@ DEFAULT_CONFIG = {
     "cancel_watcher_asset_name": "Alpensia_CancelWatcher_v1.0.1.zip",
     "cancel_watcher_exe_name": CANCEL_EXE_NAME,
     "launch_args": [],
-    "allow_prerelease": False,
 }
 
 
@@ -54,6 +55,10 @@ def local_version_path() -> str:
     return os.path.join(base_dir(), LOCAL_VERSION_FILE)
 
 
+def local_cancel_version_path() -> str:
+    return os.path.join(base_dir(), LOCAL_CANCEL_VERSION_FILE)
+
+
 def temp_download_dir() -> str:
     path = os.path.join(base_dir(), "_update_tmp")
     os.makedirs(path, exist_ok=True)
@@ -75,10 +80,7 @@ def ensure_config_ready(cfg: dict) -> None:
     owner = str(cfg.get("github_owner", "")).strip()
     repo = str(cfg.get("github_repo", "")).strip()
     if not owner or not repo or owner == "REPLACE_ME" or repo == "REPLACE_ME":
-        raise RuntimeError(
-            "launcher_config.json에 GitHub 저장소 정보를 먼저 입력해야 합니다.\n"
-            "예: github_owner, github_repo"
-        )
+        raise RuntimeError("launcher_config.json에 GitHub 저장소 정보를 입력해야 합니다.")
 
 
 def request_headers() -> dict:
@@ -110,6 +112,57 @@ def release_assets(release: dict) -> dict:
     return {asset.get("name", ""): asset for asset in release.get("assets", [])}
 
 
+def parse_version_parts(version: str) -> tuple:
+    parts = []
+    for chunk in str(version).strip().lstrip("vV").split("."):
+        try:
+            parts.append(int(chunk))
+        except ValueError:
+            digits = "".join(ch for ch in chunk if ch.isdigit())
+            parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def is_update_needed(local_version: str, remote_version: str) -> bool:
+    return parse_version_parts(remote_version) > parse_version_parts(local_version)
+
+
+def read_version_file(path: str) -> str:
+    if not os.path.exists(path):
+        return "0.0.0"
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return str(payload.get("version", "0.0.0"))
+    except Exception:
+        return "0.0.0"
+
+
+def write_version_file(path: str, payload: dict) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def read_local_version() -> str:
+    return read_version_file(local_version_path())
+
+
+def read_local_cancel_version() -> str:
+    return read_version_file(local_cancel_version_path())
+
+
+def write_local_version(payload: dict) -> None:
+    write_version_file(local_version_path(), payload)
+
+
+def write_local_cancel_version(payload: dict) -> None:
+    write_version_file(local_cancel_version_path(), payload)
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
 def find_cancel_watcher_asset(assets: dict, preferred_name: str) -> dict:
     preferred = assets.get(preferred_name)
     if preferred:
@@ -124,38 +177,6 @@ def find_cancel_watcher_asset(assets: dict, preferred_name: str) -> dict:
         raise RuntimeError(f"GitHub Release 자산에서 {preferred_name} 파일을 찾지 못했습니다.")
     candidates.sort(key=lambda item: parse_version_parts(item[0]), reverse=True)
     return candidates[0][1]
-
-
-def parse_version_parts(version: str) -> tuple:
-    parts = []
-    for chunk in str(version).strip().lstrip("vV").split("."):
-        try:
-            parts.append(int(chunk))
-        except ValueError:
-            digits = "".join(ch for ch in chunk if ch.isdigit())
-            parts.append(int(digits) if digits else 0)
-    return tuple(parts)
-
-
-def read_local_version() -> str:
-    path = local_version_path()
-    if not os.path.exists(path):
-        return "0.0.0"
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-        return str(payload.get("version", "0.0.0"))
-    except Exception:
-        return "0.0.0"
-
-
-def write_local_version(payload: dict) -> None:
-    with open(local_version_path(), "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-
-
-def sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
 
 
 def fetch_release_info(cfg: dict) -> dict:
@@ -177,19 +198,24 @@ def fetch_release_info(cfg: dict) -> dict:
     if not app_asset:
         raise RuntimeError(f"GitHub Release 자산에서 앱 파일 {app_asset_name}을 찾지 못했습니다.")
 
+    cancel_asset_name = str(
+        version_payload.get("cancel_watcher_asset_name")
+        or cfg.get("cancel_watcher_asset_name")
+        or "Alpensia_CancelWatcher_v1.0.1.zip"
+    )
+    cancel_asset = find_cancel_watcher_asset(assets, cancel_asset_name)
+    cancel_version = str(version_payload.get("cancel_watcher_version") or "1.0.1").strip()
+
     return {
         "version": version,
         "notes": str(version_payload.get("notes", "")).strip(),
         "sha256": str(version_payload.get("sha256", "")).strip().lower(),
         "download_url": app_asset["browser_download_url"],
-        "published_at": release.get("published_at", ""),
-        "release_name": release.get("name") or release.get("tag_name") or version,
+        "cancel_watcher_version": cancel_version,
+        "cancel_watcher_sha256": str(version_payload.get("cancel_watcher_sha256", "")).strip().lower(),
+        "cancel_watcher_download_url": cancel_asset["browser_download_url"],
         "raw_version_payload": version_payload,
     }
-
-
-def is_update_needed(local_version: str, remote_version: str) -> bool:
-    return parse_version_parts(remote_version) > parse_version_parts(local_version)
 
 
 def download_release_binary(url: str, expected_sha256: str = "", suffix: str = ".exe") -> str:
@@ -219,13 +245,13 @@ def replace_file(temp_path: str, target: str, app_label: str) -> None:
                 os.remove(backup)
             return
         except PermissionError:
-            answer = messagebox.askretrycancel(
+            retry = messagebox.askretrycancel(
                 "업데이트 대기",
-                f"{app_label}이(가) 실행 중이라 파일을 교체할 수 없습니다.\n"
-                "프로그램을 모두 닫은 뒤 [다시 시도]를 눌러주세요.",
+                f"{app_label}이 실행 중이라 파일을 교체할 수 없습니다.\n"
+                "프로그램을 종료한 뒤 다시 시도해 주세요.",
             )
-            if not answer:
-                raise RuntimeError("사용자가 업데이트를 취소했습니다.")
+            if not retry:
+                raise RuntimeError("업데이트가 취소되었습니다.")
             time.sleep(1.0)
         except Exception:
             if os.path.exists(backup) and not os.path.exists(target):
@@ -247,24 +273,15 @@ def launch_app(cfg: dict) -> None:
     launch_exe(local_app_path(), cfg.get("launch_args", []))
 
 
-def format_release_message(info: dict) -> str:
-    notes = info.get("notes", "").strip()
-    if not notes:
-        return f"새 버전 {info['version']}이 있습니다.\n지금 업데이트할까요?"
-    return f"새 버전 {info['version']}이 있습니다.\n\n변경사항:\n{notes}\n\n지금 업데이트할까요?"
+def launch_cancel_watcher(cfg: dict) -> None:
+    launch_exe(local_cancel_path(cfg))
 
 
-def install_or_update(cfg: dict, remote: dict, local_version: str, prompt: bool = True) -> bool:
+def install_or_update_reservation(cfg: dict, remote: dict) -> bool:
     app_exists = os.path.exists(local_app_path())
-    needs_update = (not app_exists) or is_update_needed(local_version, remote["version"])
-    if not needs_update:
+    local_version = read_local_version()
+    if app_exists and not is_update_needed(local_version, remote["version"]):
         return False
-
-    if prompt and app_exists:
-        if not messagebox.askyesno("업데이트", format_release_message(remote)):
-            return False
-    elif not app_exists:
-        messagebox.showinfo("초기 설치", f"최신 버전 {remote['version']}을 내려받아 설치합니다.")
 
     temp_path = download_release_binary(remote["download_url"], remote.get("sha256", ""), suffix=".exe")
     try:
@@ -273,31 +290,27 @@ def install_or_update(cfg: dict, remote: dict, local_version: str, prompt: bool 
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-
-    messagebox.showinfo("업데이트 완료", f"버전 {remote['version']} 적용이 완료되었습니다.")
     return True
 
 
-def install_cancel_watcher(cfg: dict, prompt: bool = True) -> str:
-    release = latest_release(cfg)
-    assets = release_assets(release)
-    asset_name = str(cfg.get("cancel_watcher_asset_name") or "Alpensia_CancelWatcher_v1.0.1.zip")
-    asset = find_cancel_watcher_asset(assets, asset_name)
-
+def install_or_update_cancel_watcher(cfg: dict, remote: dict) -> bool:
     target = local_cancel_path(cfg)
-    if prompt and os.path.exists(target):
-        ok = messagebox.askyesno(
-            "취소티 감시",
-            "취소티 감시 프로그램이 이미 있습니다.\n최신 릴리즈 파일로 다시 다운로드할까요?",
-        )
-        if not ok:
-            return target
+    app_exists = os.path.exists(target)
+    local_version = read_local_cancel_version()
+    remote_version = remote["cancel_watcher_version"]
+    if app_exists and not is_update_needed(local_version, remote_version):
+        return False
 
-    zip_path = download_release_binary(asset["browser_download_url"], "", suffix=".zip")
+    zip_path = download_release_binary(
+        remote["cancel_watcher_download_url"],
+        remote.get("cancel_watcher_sha256", ""),
+        suffix=".zip",
+    )
     extract_dir = tempfile.mkdtemp(prefix="alpensia_cancel_", dir=temp_download_dir())
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(extract_dir)
+
         exe_name = str(cfg.get("cancel_watcher_exe_name") or CANCEL_EXE_NAME)
         extracted = os.path.join(extract_dir, exe_name)
         if not os.path.exists(extracted):
@@ -309,76 +322,70 @@ def install_cancel_watcher(cfg: dict, prompt: bool = True) -> str:
             if not matches:
                 raise RuntimeError("압축 파일 안에서 취소티 감시 EXE를 찾지 못했습니다.")
             extracted = matches[0]
+
         temp_exe = os.path.join(temp_download_dir(), exe_name + ".tmp")
         if os.path.exists(temp_exe):
             os.remove(temp_exe)
         shutil.copy2(extracted, temp_exe)
         replace_file(temp_exe, target, "알펜시아 취소티 감시")
+        write_local_cancel_version({"version": remote_version})
     finally:
         if os.path.exists(zip_path):
             os.remove(zip_path)
         shutil.rmtree(extract_dir, ignore_errors=True)
-
-    messagebox.showinfo("다운로드 완료", "취소티 감시 프로그램 다운로드가 완료되었습니다.")
-    return target
+    return True
 
 
-def run_reservation_app(cfg: dict):
+def run_with_online_update(cfg: dict, updater, launcher, fallback_path: str, missing_message: str) -> None:
     try:
         ensure_config_ready(cfg)
-        local_version = read_local_version()
         remote = fetch_release_info(cfg)
-        install_or_update(cfg, remote, local_version)
-        launch_app(cfg)
+        updater(cfg, remote)
+        launcher(cfg)
     except (HTTPError, URLError) as e:
-        if os.path.exists(local_app_path()):
+        if os.path.exists(fallback_path):
             messagebox.showwarning(
                 "업데이트 확인 실패",
-                f"GitHub Releases 확인에 실패했습니다.\n기존 버전을 실행합니다.\n\n사유: {e}",
+                f"GitHub Releases 확인에 실패했습니다.\n기존 프로그램을 실행합니다.\n\n사유: {e}",
             )
-            launch_app(cfg)
+            launcher(cfg)
             return
-        messagebox.showerror("실행 실패", f"초기 설치 파일을 가져오지 못했습니다.\n\n사유: {e}")
+        messagebox.showerror("실행 실패", f"{missing_message}\n\n사유: {e}")
     except Exception as e:
-        if os.path.exists(local_app_path()):
+        if os.path.exists(fallback_path):
             answer = messagebox.askyesno(
                 "업데이트 오류",
-                f"업데이트 처리 중 문제가 생겼습니다.\n기존 버전을 실행할까요?\n\n사유: {e}",
+                f"업데이트 처리 중 문제가 생겼습니다.\n기존 프로그램을 실행할까요?\n\n사유: {e}",
             )
             if answer:
-                launch_app(cfg)
+                launcher(cfg)
                 return
         messagebox.showerror("실행 실패", str(e))
 
 
-def run_cancel_watcher(cfg: dict):
-    try:
-        ensure_config_ready(cfg)
-        path = local_cancel_path(cfg)
-        if not os.path.exists(path):
-            install_cancel_watcher(cfg, prompt=False)
-        else:
-            # Keep this as an explicit refresh prompt so the launcher can be used
-            # offline-ish after the first install.
-            install_cancel_watcher(cfg, prompt=True)
-        launch_exe(local_cancel_path(cfg))
-    except (HTTPError, URLError) as e:
-        path = local_cancel_path(cfg)
-        if os.path.exists(path):
-            messagebox.showwarning(
-                "다운로드 확인 실패",
-                f"GitHub Releases 확인에 실패했습니다.\n기존 취소티 감시 프로그램을 실행합니다.\n\n사유: {e}",
-            )
-            launch_exe(path)
-            return
-        messagebox.showerror("실행 실패", f"취소티 감시 프로그램을 다운로드하지 못했습니다.\n\n사유: {e}")
-    except Exception as e:
-        messagebox.showerror("실행 실패", str(e))
+def run_reservation_app(cfg: dict) -> None:
+    run_with_online_update(
+        cfg,
+        install_or_update_reservation,
+        launch_app,
+        local_app_path(),
+        "예약 프로그램 파일을 찾지 못했고 업데이트 파일도 가져오지 못했습니다.",
+    )
 
 
-def build_menu(root: tk.Tk, cfg: dict):
+def run_cancel_watcher(cfg: dict) -> None:
+    run_with_online_update(
+        cfg,
+        install_or_update_cancel_watcher,
+        launch_cancel_watcher,
+        local_cancel_path(cfg),
+        "취소티 감시 프로그램 파일을 찾지 못했고 업데이트 파일도 가져오지 못했습니다.",
+    )
+
+
+def build_menu(root: tk.Tk, cfg: dict) -> None:
     root.title("알펜시아 런처")
-    root.geometry("420x240")
+    root.geometry("430x240")
     root.resizable(False, False)
 
     frame = tk.Frame(root, padx=22, pady=18)
@@ -386,7 +393,7 @@ def build_menu(root: tk.Tk, cfg: dict):
 
     title = tk.Label(frame, text="알펜시아 런처", font=("맑은 고딕", 18, "bold"))
     title.pack(anchor="w")
-    subtitle = tk.Label(frame, text="예약 프로그램 업데이트와 취소티 감시 실행", fg="gray")
+    subtitle = tk.Label(frame, text="예약 프로그램과 취소티 감시 실행 / 업데이트", fg="gray")
     subtitle.pack(anchor="w", pady=(2, 16))
 
     def run_and_close(fn):
@@ -406,7 +413,7 @@ def build_menu(root: tk.Tk, cfg: dict):
 
     btn_cancel = tk.Button(
         frame,
-        text="취소티 감시 다운로드 / 실행",
+        text="취소티 감시 프로그램 실행 / 업데이트",
         height=2,
         command=lambda: run_and_close(run_cancel_watcher),
     )

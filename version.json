@@ -1,6 +1,9 @@
 ﻿{
-    "version":  "4.1.5",
+    "version":  "4.1.6",
     "asset_name":  "Alpensia.exe",
-    "notes":  "로그인 정보와 설정을 사용자 AppData에 저장하여 업데이트 후에도 유지",
-    "sha256":  "12b5809cfd9fa9a511f76720b1addd4dbd84250b0c50d38419d5c6b7e2edc344"
+    "notes":  "런처에서 예약 프로그램과 취소티 감시를 각각 실행/업데이트 방식으로 처리",
+    "sha256":  "50dc9f57f9080a17f01e2623a0d0e34e36d962a4e44bb5d3d47e870a3313629c",
+    "cancel_watcher_version":  "1.0.1",
+    "cancel_watcher_asset_name":  "Alpensia_CancelWatcher_v1.0.1.zip",
+    "cancel_watcher_sha256":  "f4e5837244f38166eef4754316bab35b64918f153dd7473b4fd8e92907ccd71a"
 }
