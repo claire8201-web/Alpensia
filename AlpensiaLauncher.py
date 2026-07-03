@@ -9,6 +9,7 @@ import time
 import tkinter as tk
 import zipfile
 from tkinter import messagebox
+from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
