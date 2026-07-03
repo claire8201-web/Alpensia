@@ -4,6 +4,8 @@ build/
 dist/
 dist_*/
 release_v*/
+_archive/
+_local_state/
 debug_captures/
 alpensia _ capture img/
 
