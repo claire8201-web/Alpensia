@@ -1,9 +1,9 @@
 ﻿{
-    "version":  "4.1.6",
+    "version":  "4.1.7",
     "asset_name":  "Alpensia.exe",
-    "notes":  "런처에서 예약 프로그램과 취소티 감시를 각각 실행/업데이트 방식으로 처리",
-    "sha256":  "50dc9f57f9080a17f01e2623a0d0e34e36d962a4e44bb5d3d47e870a3313629c",
-    "cancel_watcher_version":  "1.0.1",
-    "cancel_watcher_asset_name":  "Alpensia_CancelWatcher_v1.0.1.zip",
-    "cancel_watcher_sha256":  "f4e5837244f38166eef4754316bab35b64918f153dd7473b4fd8e92907ccd71a"
+    "notes":  "취소티 감시 중 브라우저 세션이 끊기면 자동으로 Chrome 재시작 후 재로그인",
+    "sha256":  "e6af1efd2d5d9c0f3192580875966ad90d8e83528463e8aed0660676849969fd",
+    "cancel_watcher_version":  "1.0.2",
+    "cancel_watcher_asset_name":  "Alpensia_CancelWatcher_v1.0.2.zip",
+    "cancel_watcher_sha256":  "55f3e314e77cefc4f931c93bd393c9d249e03fb9f752f43b32042392b68c177a"
 }

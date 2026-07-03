@@ -15,6 +15,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from selenium import webdriver
+from selenium.common.exceptions import InvalidSessionIdException, NoSuchWindowException, WebDriverException
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -53,11 +54,20 @@ ICON_FILENAME = "alpensia_logo.ico"
 APP_BG = "#f0f0f0"
 WHITE = "#ffffff"
 APP_TITLE = "알펜시아 취소티 감시"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 MAX_SAVED_ACCOUNTS = 20
 WATCH_COUNT = 3
 DPAPI_ENTROPY = b"Alpensia_V4.1.1_Credentials"
 DEBUG_CAPTURE_ENABLED = False
+SESSION_LOST_MARKERS = (
+    "invalid session id",
+    "session deleted",
+    "no such window",
+    "web view not found",
+    "disconnected",
+    "chrome not reachable",
+    "target window already closed",
+)
 
 
 def _resource_candidates(filename: str):
@@ -309,6 +319,25 @@ class CancelWatcherBot:
         })
         self.driver = webdriver.Chrome(options=opts)
         self.wait = WebDriverWait(self.driver, 15)
+
+    def _is_session_lost_error(self, exc: Exception) -> bool:
+        if isinstance(exc, (InvalidSessionIdException, NoSuchWindowException)):
+            return True
+        if isinstance(exc, WebDriverException):
+            text = str(exc).lower()
+            return any(marker in text for marker in SESSION_LOST_MARKERS)
+        return False
+
+    def _restart_driver_and_login(self):
+        self._check_stop()
+        self.logger.log("[WARN] 브라우저 세션이 종료되어 Chrome을 다시 시작합니다.")
+        self.close()
+        self.driver = None
+        self.wait = None
+        time.sleep(1.0)
+        self._new_driver()
+        self.login(self.user_id, self.password)
+        self.logger.log("[OK] 브라우저 세션 복구 완료")
 
     def close(self):
         try:
@@ -769,6 +798,14 @@ class CancelWatcherBot:
                         self._open_watch_date(item)
                         candidates = self._candidate_slots(item)
                     except Exception as e:
+                        if self._is_session_lost_error(e):
+                            self.logger.log(f"[WARN] {item.ymd} 확인 중 브라우저 세션 끊김 감지")
+                            try:
+                                self._restart_driver_and_login()
+                            except Exception as recover_error:
+                                self.logger.log(f"[ERROR] 브라우저 세션 복구 실패: {recover_error}")
+                                raise
+                            continue
                         self.logger.log(f"[WARN] {item.ymd} 확인 실패: {e}")
                         self._save_debug(f"check_fail_{item.yyyymmdd}")
                         continue
@@ -779,7 +816,18 @@ class CancelWatcherBot:
 
                     for slot in candidates:
                         self._check_stop()
-                        ok = self._try_book_slot(item, slot, test_mode=test_mode)
+                        try:
+                            ok = self._try_book_slot(item, slot, test_mode=test_mode)
+                        except Exception as e:
+                            if self._is_session_lost_error(e):
+                                self.logger.log(f"[WARN] {item.ymd} 예약 시도 중 브라우저 세션 끊김 감지")
+                                try:
+                                    self._restart_driver_and_login()
+                                except Exception as recover_error:
+                                    self.logger.log(f"[ERROR] 브라우저 세션 복구 실패: {recover_error}")
+                                    raise
+                                break
+                            raise
                         if ok:
                             if test_mode:
                                 self.logger.log(f"[TEST] {item.ymd} 점검 완료. 실제 예약은 하지 않아 감시는 계속됩니다.")
@@ -787,7 +835,18 @@ class CancelWatcherBot:
                                 status[item.ymd] = "BOOKED"
                                 self.logger.log(f"[BOOKED] {item.ymd} 감시 종료. 나머지 날짜 감시는 계속합니다.")
                             break
-                        self._open_watch_date(item)
+                        try:
+                            self._open_watch_date(item)
+                        except Exception as e:
+                            if self._is_session_lost_error(e):
+                                self.logger.log(f"[WARN] {item.ymd} 재확인 중 브라우저 세션 끊김 감지")
+                                try:
+                                    self._restart_driver_and_login()
+                                except Exception as recover_error:
+                                    self.logger.log(f"[ERROR] 브라우저 세션 복구 실패: {recover_error}")
+                                    raise
+                                break
+                            raise
 
                 self.logger.log(f"[WAIT] 다음 감시까지 {interval_sec}초 대기")
                 self._sleep_interval(interval_sec)
