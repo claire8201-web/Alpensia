@@ -3,6 +3,8 @@
   "github_repo": "Alpensia",
   "app_asset_name": "Alpensia.exe",
   "version_asset_name": "version.json",
+  "cancel_watcher_asset_name": "Alpensia_CancelWatcher_v1.0.0.zip",
+  "cancel_watcher_exe_name": "Alpensia_CancelWatcher.exe",
   "launch_args": [],
   "allow_prerelease": false
 }
