@@ -14,7 +14,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-LAUNCHER_VERSION = "1.2.0"
+LAUNCHER_VERSION = "1.2.1"
 APP_EXE_NAME = "Alpensia.exe"
 CANCEL_EXE_NAME = "Alpensia_CancelWatcher.exe"
 LOCAL_VERSION_FILE = "app_version.json"
@@ -69,7 +69,7 @@ def load_config() -> dict:
     data = dict(DEFAULT_CONFIG)
     path = config_path()
     if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig") as f:
             loaded = json.load(f)
         if isinstance(loaded, dict):
             data.update(loaded)
@@ -93,7 +93,7 @@ def request_headers() -> dict:
 def api_get_json(url: str) -> dict:
     req = Request(url, headers=request_headers())
     with urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        return json.loads(resp.read().decode("utf-8-sig"))
 
 
 def download_bytes(url: str) -> bytes:
@@ -131,7 +131,7 @@ def read_version_file(path: str) -> str:
     if not os.path.exists(path):
         return "0.0.0"
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig") as f:
             payload = json.load(f)
         return str(payload.get("version", "0.0.0"))
     except Exception:
@@ -188,7 +188,7 @@ def fetch_release_info(cfg: dict) -> dict:
     if not version_asset:
         raise RuntimeError(f"GitHub Release 자산에서 {version_asset_name} 파일을 찾지 못했습니다.")
 
-    version_payload = json.loads(download_bytes(version_asset["browser_download_url"]).decode("utf-8"))
+    version_payload = json.loads(download_bytes(version_asset["browser_download_url"]).decode("utf-8-sig"))
     version = str(version_payload.get("version", "")).strip()
     if not version:
         raise RuntimeError("version.json에 version 값이 없습니다.")

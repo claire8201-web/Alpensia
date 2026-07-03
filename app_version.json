@@ -1,8 +1,8 @@
-﻿{
-    "version":  "4.1.7",
+{
+    "version":  "4.1.8",
     "asset_name":  "Alpensia.exe",
-    "notes":  "취소티 감시 중 브라우저 세션이 끊기면 자동으로 Chrome 재시작 후 재로그인",
-    "sha256":  "e6af1efd2d5d9c0f3192580875966ad90d8e83528463e8aed0660676849969fd",
+    "notes":  "런처 JSON 읽기 오류 방지: UTF-8 BOM 호환 처리",
+    "sha256":  "85dd982b909ae8897eff883acc52f1a446148fbd4c3c7e293a5411a3dc8bd3fb",
     "cancel_watcher_version":  "1.0.2",
     "cancel_watcher_asset_name":  "Alpensia_CancelWatcher_v1.0.2.zip",
     "cancel_watcher_sha256":  "55f3e314e77cefc4f931c93bd393c9d249e03fb9f752f43b32042392b68c177a"
