@@ -1,6 +1,6 @@
 {
-  "version": "4.1.2",
+  "version": "4.1.4",
   "asset_name": "Alpensia.exe",
-  "notes": "예약 우선순위 체크 해제 시 날짜와 시간을 빈칸으로 초기화",
-  "sha256": "ae5c1c840d69cda6fb7d9465984a2c1bf909dd0bb40e2d39142254a672249658"
+  "notes": "4순위 예약 흐름과 목표월 이동 안정화 업데이트",
+  "sha256": "2686cb7e43f4e1eaa40e4bfd7feba0947c71a8aea36523d361f8465d117980bc"
 }

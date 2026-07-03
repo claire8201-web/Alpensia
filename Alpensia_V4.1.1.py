@@ -39,8 +39,11 @@ WHITE = "#ffffff"
 LOGO_FILENAME = "alpensia_logo.png"
 ICON_FILENAME = "alpensia_logo.ico"
 APP_ID = "armatech.alpensia.v411"
-APP_VERSION = "4.1.2"
+APP_VERSION = "4.1.4"
 MAX_SAVED_ACCOUNTS = 20
+PRIORITY_COUNT = 4
+TIME_CANDIDATE_MAX_DIFF_MINUTES = 120
+TIME_CANDIDATE_MAX_COUNT = 40
 DPAPI_ENTROPY = b"Alpensia_V4.1.1_Credentials"
 DEBUG_CAPTURE_ENABLED = False
 TIME_PICK_DEBUG_ENABLED = False
@@ -146,6 +149,13 @@ def _dpapi_decrypt(cipher_text_b64: str) -> str:
 
 def yyyymm_now() -> str:
     return datetime.now().strftime("%Y%m")
+
+
+def yyyymm_shift(year: int, month: int, delta: int) -> str:
+    month0 = (year * 12 + (month - 1)) + delta
+    y = month0 // 12
+    m = month0 % 12 + 1
+    return f"{y:04d}{m:02d}"
 
 
 def safe_int(x: str, default: int = 0) -> int:
@@ -616,9 +626,15 @@ class AlpensiaBot:
         raise RuntimeError(f"time radio not found: selector={selector_name} idx={idx} id={rid}")
 
 
-    def _build_time_candidates_from_page(self, target_hhmm: str, max_candidates: int = 12) -> List[dict]:
+    def _build_time_candidates_from_page(
+        self,
+        target_hhmm: str,
+        max_candidates: int = TIME_CANDIDATE_MAX_COUNT,
+        max_diff_minutes: int = TIME_CANDIDATE_MAX_DIFF_MINUTES,
+    ) -> List[dict]:
         """
-        목표시간 기준 거리순 후보 생성
+        목표시간 기준 허용 범위 안에서 거리순 후보 생성.
+        예: 09:00, ±120분이면 07:00~11:00만 후보로 본다.
         """
         started = time.perf_counter()
         target_min = self._hhmm_to_minutes(target_hhmm)
@@ -643,6 +659,7 @@ class AlpensiaBot:
         for it in items:
             it["dist"] = abs(it["minutes"] - target_min)
 
+        items = [it for it in items if it["dist"] <= max_diff_minutes]
         items.sort(key=lambda x: (x["dist"], x["minutes"]))  # 거리 우선 + 빠른시간 우선
         items = items[:max_candidates]
         self._perf(f"[PERF] score/sort candidates: {time.perf_counter() - sort_started:.3f}s")
@@ -706,12 +723,21 @@ class AlpensiaBot:
             self._dbg(f"[CLICK][FAIL] {item.get('booktime')} err={e}")
             return False
 
-    def select_time_by_target(self, target_hhmm: str, max_candidates: int = 12) -> bool:
+    def select_time_by_target(
+        self,
+        target_hhmm: str,
+        max_candidates: int = TIME_CANDIDATE_MAX_COUNT,
+        max_diff_minutes: int = TIME_CANDIDATE_MAX_DIFF_MINUTES,
+    ) -> bool:
         """
         목표시간 기준 후보 -> 순서대로 클릭
         """
         started = time.perf_counter()
-        candidates = self._build_time_candidates_from_page(target_hhmm, max_candidates=max_candidates)
+        candidates = self._build_time_candidates_from_page(
+            target_hhmm,
+            max_candidates=max_candidates,
+            max_diff_minutes=max_diff_minutes,
+        )
         if not candidates:
             return False
 
@@ -982,6 +1008,24 @@ class AlpensiaBot:
         except Exception:
             return False
 
+    def _calendar_url_with_search_yyyymm(self, yyyymm: str) -> str:
+        current = self.driver.current_url or ""
+        if "searchYYMM=" in current:
+            return re.sub(r"searchYYMM=\d{6}", f"searchYYMM={yyyymm}", current)
+        joiner = "&" if "?" in current else "?"
+        return f"{current}{joiner}searchYYMM={yyyymm}"
+
+    def _go_to_calendar_yyyymm(self, yyyymm: str) -> bool:
+        try:
+            url = self._calendar_url_with_search_yyyymm(yyyymm)
+            self.logger.log(f"[INFO] 목표월 달력 이동 시도: searchYYMM={yyyymm}")
+            self.driver.get(url)
+            time.sleep(0.5)
+            return self.check_calendar_loaded()
+        except Exception as e:
+            self.logger.log(f"[WARN] 목표월 달력 이동 실패: {e}")
+            return False
+
     def select_date(self, ymd: str) -> bool:
         try:
             _y, _m, _d = [int(x) for x in ymd.split("-")]
@@ -992,20 +1036,14 @@ class AlpensiaBot:
         target_date = ymd.replace("-", "")
         self.logger.log(f"[INFO] 달력 날짜 클릭 시도: {ymd}")
 
-        try:
-            WebDriverWait(self.driver, 10).until(
-                lambda d: len(d.find_elements(By.CSS_SELECTOR, "div.wrap.theme-reserve.calendar")) > 0
-            )
-            cal = self.driver.find_element(By.CSS_SELECTOR, "div.wrap.theme-reserve.calendar")
-        except Exception:
-            return False
-
-        # 목표 일자 링크를 직접 찾고, 클릭/전환을 재시도한다.
         target_selector = f"a.reservebtn[href*='workDate={target_date}']"
         target_found = False
 
-        for attempt in range(1, 4):
+        def click_visible_date() -> Optional[bool]:
             try:
+                WebDriverWait(self.driver, 10).until(
+                    lambda d: len(d.find_elements(By.CSS_SELECTOR, "div.wrap.theme-reserve.calendar")) > 0
+                )
                 cal = self.driver.find_element(By.CSS_SELECTOR, "div.wrap.theme-reserve.calendar")
                 target_links = cal.find_elements(By.CSS_SELECTOR, target_selector)
                 if not target_links:
@@ -1018,11 +1056,8 @@ class AlpensiaBot:
                             break
 
                 if not target_links:
-                    self.logger.log(f"[WARN] 날짜 링크 미탐지(시도 {attempt}/3): {ymd}")
-                    time.sleep(0.25)
-                    continue
+                    return None
 
-                target_found = True
                 a = target_links[0]
 
                 self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", a)
@@ -1046,13 +1081,54 @@ class AlpensiaBot:
                 return True
 
             except Exception as e:
-                self.logger.log(f"[WARN] 날짜 클릭/전환 실패(시도 {attempt}/3): {e}")
-                time.sleep(0.3)
+                self.logger.log(f"[WARN] 날짜 클릭/전환 실패: {e}")
+                return False
+
+        # 1) 현재 보이는 달력에서 먼저 찾는다. 없으면 실패가 아니라 목표월로 이동한다.
+        clicked = click_visible_date()
+        if clicked is True:
+            return True
+        if clicked is False:
+            target_found = True
+            for attempt in range(1, 3):
+                time.sleep(0.25)
+                clicked = click_visible_date()
+                if clicked is True:
+                    return True
+                if clicked is None:
+                    break
+        else:
+            self.logger.log(f"[INFO] 현재 달력에 목표일 없음 → 목표월 달력으로 이동: {ymd}")
+
+        # 2) 알펜시아 달력은 보통 searchYYMM 기준월 + 다음월을 함께 보여준다.
+        #    예: searchYYMM=202607 화면에 2026.07 + 2026.08 표시.
+        target_calendar_months = [
+            yyyymm_shift(_y, _m, -1),
+            yyyymm_shift(_y, _m, 0),
+        ]
+        seen_months = set()
+        for yyyymm in target_calendar_months:
+            if yyyymm in seen_months:
+                continue
+            seen_months.add(yyyymm)
+
+            if not self._go_to_calendar_yyyymm(yyyymm):
+                continue
+
+            for attempt in range(1, 4):
+                clicked = click_visible_date()
+                if clicked is True:
+                    return True
+                if clicked is False:
+                    target_found = True
+                else:
+                    self.logger.log(f"[INFO] 목표월 달력 확인 중(searchYYMM={yyyymm}, 시도 {attempt}/3): {ymd}")
+                time.sleep(0.25)
 
         if target_found:
             self.logger.log("[WARN] 날짜 링크는 찾았지만 시간표 페이지 전환 실패")
         else:
-            self.logger.log("[WARN] 날짜 링크(reservebtn)를 찾지 못함")
+            self.logger.log("[WARN] 날짜 링크(reservebtn)를 찾지 못함 - 목표월 달력 이동 후에도 미탐지")
         return False
 
     # --------------------------
@@ -1065,10 +1141,13 @@ class AlpensiaBot:
         # ✅ (삭제됨) _wait_for_time_table() 사용 안함
         # 시간표는 '라디오 등장'을 기준으로 새 모듈에서 자체 대기함
 
-        self.logger.log(f"[INFO] 목표 시간 선택: {target_time}")
+        self.logger.log(
+            f"[INFO] 목표 시간 선택: {target_time} "
+            f"(허용 범위 ±{TIME_CANDIDATE_MAX_DIFF_MINUTES}분)"
+        )
 
         select_started = time.perf_counter()
-        ok = self.select_time_by_target(target_hhmm=target_time, max_candidates=12)
+        ok = self.select_time_by_target(target_hhmm=target_time)
         self._perf(f"[PERF] select nearest time: {time.perf_counter() - select_started:.3f}s")
         if not ok:
             self.logger.log("[MISS] 최근접 시간 선택 실패(라디오/시간 추출/클릭 실패)")
@@ -1457,7 +1536,7 @@ class App(tk.Tk):
         # ✅ 초기 상태 반영(맨 마지막에 1줄)
         self._on_mode_change()
 
-        lf_pri = ttk.LabelFrame(left, text="예약 우선순위 (1→2→3 순서, 다건 예약)", padding=10)
+        lf_pri = ttk.LabelFrame(left, text="예약 우선순위 (1→2→3→4 순서, 다건 예약)", padding=10)
         lf_pri.grid(row=4, column=0, sticky="ew", pady=(0, 10))
 
         time_opts = [fmt_hhmm(m) for m in range(6 * 60, 19 * 60 + 1, 10)]
@@ -1512,7 +1591,7 @@ class App(tk.Tk):
                 time_var.set("")
             self._apply_priority_enabled_state(row_idx)
 
-        for i in range(3):
+        for i in range(PRIORITY_COUNT):
             add_row(i)
 
         btn_frame = ttk.Frame(left)
@@ -1804,7 +1883,7 @@ class App(tk.Tk):
             self._enforce_mode_option_exclusive(prefer="safe")
 
             pri = cfg.get("priorities", [])
-            for i in range(min(3, len(pri))):
+            for i in range(min(PRIORITY_COUNT, len(pri))):
                 enabled = bool(pri[i].get("enabled", True if i == 0 else False))
                 self.pri_vars[i][0].set(enabled)
                 self.pri_vars[i][1].set(pri[i].get("ymd", datetime.now().strftime("%Y-%m-%d")) if enabled else "")
@@ -1815,7 +1894,7 @@ class App(tk.Tk):
 
     def _save_config(self):
         pri = []
-        for i in range(3):
+        for i in range(PRIORITY_COUNT):
             use_var, date_var, time_var = self.pri_vars[i]
             pri.append({
                 "enabled": bool(use_var.get()),
@@ -1860,7 +1939,7 @@ class App(tk.Tk):
             return
 
         priorities: List[PriorityItem] = []
-        for i in range(3):
+        for i in range(PRIORITY_COUNT):
             use_var, date_var, time_var = self.pri_vars[i]
             priorities.append(PriorityItem(
                 enabled=bool(use_var.get()),
