@@ -1,8 +1,8 @@
-{
-    "version":  "4.1.8",
+﻿{
+    "version":  "4.1.9",
     "asset_name":  "Alpensia.exe",
-    "notes":  "런처 JSON 읽기 오류 방지: UTF-8 BOM 호환 처리",
-    "sha256":  "85dd982b909ae8897eff883acc52f1a446148fbd4c3c7e293a5411a3dc8bd3fb",
+    "notes":  "09:00 대기 후 세션 만료 시 재로그인 및 달력 복구",
+    "sha256":  "d67216dba42888f45e9d2b75a4a9946401c4f95d9fc7250021284af825489b4c",
     "cancel_watcher_version":  "1.0.2",
     "cancel_watcher_asset_name":  "Alpensia_CancelWatcher_v1.0.2.zip",
     "cancel_watcher_sha256":  "55f3e314e77cefc4f931c93bd393c9d249e03fb9f752f43b32042392b68c177a"

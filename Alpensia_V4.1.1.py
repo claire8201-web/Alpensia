@@ -55,7 +55,7 @@ WHITE = "#ffffff"
 LOGO_FILENAME = "alpensia_logo.png"
 ICON_FILENAME = "alpensia_logo.ico"
 APP_ID = "armatech.alpensia.v411"
-APP_VERSION = "4.1.8"
+APP_VERSION = "4.1.9"
 MAX_SAVED_ACCOUNTS = 20
 PRIORITY_COUNT = 4
 TIME_CANDIDATE_MAX_DIFF_MINUTES = 120
@@ -366,6 +366,8 @@ class AlpensiaBot:
         self.driver = None
         self.wait = None
         self.debug_dir = debug_dir
+        self.last_selected_hhmm = ""
+        self.last_selected_course = ""
 
     # --------------------------
     # 공통 유틸
@@ -381,6 +383,14 @@ class AlpensiaBot:
     def _perf(self, msg: str):
         if PERF_LOG_ENABLED:
             self.logger.log(msg)
+
+    def _selected_slot_text(self, time_label: str = "예약시간") -> str:
+        parts = []
+        if self.last_selected_hhmm:
+            parts.append(f"{time_label} {self.last_selected_hhmm}")
+        if self.last_selected_course:
+            parts.append(f"코스 {self.last_selected_course}")
+        return ", ".join(parts)
 
     def _check_stop(self):
         if self.stop_event.is_set():
@@ -525,6 +535,23 @@ class AlpensiaBot:
             return None
         return hh * 60 + mm
 
+    def _booktime_to_hhmm(self, booktime: str) -> str:
+        """'0937' -> '09:37'"""
+        minutes = self._parse_booktime_to_minutes(booktime)
+        if minutes is None:
+            return (booktime or "").strip()
+        return fmt_hhmm(minutes)
+
+    def _extract_course_name_from_row(self, row_text: str) -> str:
+        text = (row_text or "").strip().lower()
+        if not text:
+            return ""
+        if "asia" in text or "아시아" in text:
+            return "Asia"
+        if "alps" in text or "알프스" in text:
+            return "Alps"
+        return ""
+
     def _hhmm_to_minutes(self, hhmm: str) -> Optional[int]:
         """
         '10:00' / '1000' / '10' 지원
@@ -613,6 +640,7 @@ class AlpensiaBot:
                     "minutes": minutes,
                     "disabled": disabled,
                     "id": rid,
+                    "row_text": row_text,
                 })
 
             except Exception as e:
@@ -749,6 +777,8 @@ class AlpensiaBot:
         목표시간 기준 후보 -> 순서대로 클릭
         """
         started = time.perf_counter()
+        self.last_selected_hhmm = ""
+        self.last_selected_course = ""
         candidates = self._build_time_candidates_from_page(
             target_hhmm,
             max_candidates=max_candidates,
@@ -764,6 +794,8 @@ class AlpensiaBot:
             ok = self._click_time_radio_robust(item)
             self._perf(f"[PERF] click candidate #{k} {item.get('booktime')}: {time.perf_counter() - click_started:.3f}s")
             if ok:
+                self.last_selected_hhmm = self._booktime_to_hhmm(item.get("booktime", ""))
+                self.last_selected_course = self._extract_course_name_from_row(item.get("row_text", ""))
                 self._dbg(f"[TIME][OK] selected: {item.get('booktime')}")
                 self._perf(f"[PERF] select_time_by_target total: {time.perf_counter() - started:.3f}s")
                 return True
@@ -818,9 +850,13 @@ class AlpensiaBot:
                 pass
 
             if not self.check_calendar_loaded():
-                self.logger.log("[ERROR] 09:00 이후 달력 재로딩 실패")
-                self._save_debug("calendar_reload_after_wait_fail")
-                return
+                self.logger.log("[WARN] 09:00 이후 달력 재로딩 실패 → 세션/페이지 상태 확인")
+                if self._recover_calendar_after_wait(user_id, password, course_key):
+                    self.logger.log("[OK] 09:00 이후 달력 복구 완료")
+                else:
+                    self.logger.log("[ERROR] 09:00 이후 달력 재로딩 실패")
+                    self._save_debug("calendar_reload_after_wait_fail")
+                    return
         elif not test_mode:
             self.logger.log("[WAIT] 서버시간 대기 OFF → 즉시 진행(리허설)")
 
@@ -869,7 +905,9 @@ class AlpensiaBot:
             if live_safety_block_submit:
                 if booked:
                     success_count += 1
-                    self.logger.log(f"[SAFE] {idx}순위: 예약 직전까지 점검 완료 ({success_count}/{len(enabled)})")
+                    slot = self._selected_slot_text(time_label="선택시간")
+                    selected = f", {slot}" if slot else ""
+                    self.logger.log(f"[SAFE] {idx}순위: 예약 직전까지 점검 완료{selected} ({success_count}/{len(enabled)})")
                 else:
                     self.logger.log(f"[SAFE][WARN] {idx}순위: 예약 직전 점검 실패")
                     fail_list.append((idx, pri.ymd, pri.hhmm, "safe_dryrun_fail"))
@@ -883,7 +921,9 @@ class AlpensiaBot:
 
             if booked:
                 success_count += 1
-                self.logger.log(f"[OK] {idx}순위 예약 성공 ({success_count}/{len(enabled)})")
+                slot = self._selected_slot_text(time_label="예약시간")
+                selected = f", {slot}" if slot else ""
+                self.logger.log(f"[OK] {idx}순위 예약 성공{selected} ({success_count}/{len(enabled)})")
                 self.go_to_golf_calendar(course_key)
                 if not self.check_calendar_loaded():
                     self.logger.log("[WARN] 달력 복귀 후 로딩 실패(다음 순위 진행 불가 가능) → 캡처")
@@ -964,6 +1004,37 @@ class AlpensiaBot:
 
         WebDriverWait(self.driver, 15).until(logged_in)
         self.logger.log("[OK] 로그인 성공")
+
+    def _is_login_page(self) -> bool:
+        try:
+            url = self.driver.current_url or ""
+            if "login.do" in url:
+                return True
+            if self.driver.find_elements(By.ID, "emplyrId") and self.driver.find_elements(By.ID, "password"):
+                return True
+            body = self.driver.find_element(By.TAG_NAME, "body").text
+            return "Alpensia 로그인" in body or "아이디를 입력하세요" in body
+        except Exception:
+            return False
+
+    def _recover_calendar_after_wait(self, user_id: str, password: str, course_key: str) -> bool:
+        try:
+            if self._is_login_page():
+                self.logger.log("[WARN] 대기 중 로그인 세션 만료 감지 → 재로그인")
+                self.login(user_id, password)
+            else:
+                self.logger.log("[INFO] 로그인 페이지는 아님 → 예약 달력 직접 재진입")
+
+            for attempt in range(1, 4):
+                self._check_stop()
+                self.logger.log(f"[INFO] 달력 복구 시도 {attempt}/3")
+                self.go_to_golf_calendar(course_key)
+                if self.check_calendar_loaded():
+                    return True
+                time.sleep(0.5)
+        except Exception as e:
+            self.logger.log(f"[WARN] 달력 복구 중 오류: {e}")
+        return False
 
     def go_to_golf_calendar(self, course_key: str):
         yyyymm = yyyymm_now()
@@ -1170,7 +1241,11 @@ class AlpensiaBot:
             self._save_debug("nearest_time_pick_fail")
             return False
 
-        self.logger.log("[OK] 최근접 시간 선택 완료")
+        slot = self._selected_slot_text(time_label="선택시간")
+        if slot:
+            self.logger.log(f"[OK] 최근접 시간 선택 완료: {slot}")
+        else:
+            self.logger.log("[OK] 최근접 시간 선택 완료")
 
         if not self._ensure_agree_checked():
             self.logger.log("[WARN] 동의 체크 실패")
